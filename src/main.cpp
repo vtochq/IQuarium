@@ -6,7 +6,7 @@
 // the pixels at once.
 //
 #include <NeoPixelBus.h>
-#include <NeoPixelAnimator.h>
+//#include <NeoPixelAnimator.h>
 
 
 #include <ESP8266WiFi.h>  //For ESP8266
@@ -88,7 +88,7 @@ int min_timeout=2000; //in ms
 
 const uint16_t PixelCount = 144; // make sure to set this to the number of pixels in your strip
 const uint8_t PixelPin = 3;  // make sure to set this to the correct pin, ignored for Esp8266
-const uint8_t AnimationChannels = 2; // we only need one as all the pixels are animated at once
+
 
 NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
 // For Esp8266, the Pin is omitted and it uses GPIO3 due to DMA hardware use.  
@@ -96,109 +96,10 @@ NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
 // other side effects.
 // for details see wiki linked here https://github.com/Makuna/NeoPixelBus/wiki/ESP8266-NeoMethods 
 
-NeoPixelAnimator animations(AnimationChannels); // NeoPixel animation management object
-
-boolean fadeToColor = true;  // general purpose variable used to store effect state
 
 
-// what is stored for state is specific to the need, in this case, the colors.
-// basically what ever you need inside the animation update function
-struct MyAnimationState
-{
-    RgbColor StartingColor;
-    RgbColor EndingColor;
-};
+byte payl=0;
 
-// one entry per pixel to match the animation timing manager
-MyAnimationState animationState[AnimationChannels];
-
-void SetRandomSeed()
-{
-    uint32_t seed;
-
-    // random works best with a seed that can use 31 bits
-    // analogRead on a unconnected pin tends toward less than four bits
-    seed = analogRead(0);
-    delay(1);
-
-    for (int shifts = 3; shifts < 31; shifts += 3)
-    {
-        seed ^= analogRead(0) << shifts;
-        delay(1);
-    }
-
-    randomSeed(seed);
-}
-byte payl=2;
-
-// simple blend function
-void BlendAnimUpdate(const AnimationParam& param)
-{
-    // this gets called for each animation on every time step
-    // progress will start at 0.0 and end at 1.0
-    // we use the blend function on the RgbColor to mix
-    // color based on the progress given to us in the animation
-    RgbColor updatedColor = RgbColor::LinearBlend(
-        animationState[param.index].StartingColor,
-        animationState[param.index].EndingColor,
-        param.progress);
-
-    // apply the color to the strip
-    for (uint16_t pixel = 0; pixel < PixelCount; pixel++)
-    {
-      
-      strip.SetPixelColor(pixel, updatedColor);
-    }
-    
-    updatedColor = RgbColor(0,255,0);
-    strip.SetPixelColor(payl, updatedColor);
-}
-
-
-
-void BlendAnimUpdateU(const AnimationParam& param)
-{
-  RgbColor updatedColor = RgbColor(0,255,0);
-  strip.SetPixelColor(payl, updatedColor);
-    
-}
-
-
-void FadeInFadeOutRinseRepeat(float luminance)
-{
-    if (fadeToColor)
-    {
-        // Fade upto a random color
-        // we use HslColor object as it allows us to easily pick a hue
-        // with the same saturation and luminance so the colors picked
-        // will have similiar overall brightness
-        RgbColor target = HslColor(random(360) / 360.0f, 1.0f, luminance);
-        uint16_t time = random(600, 1200);
-
-        animationState[0].StartingColor = strip.GetPixelColor(0);
-        animationState[0].EndingColor = target;
-
-        animations.StartAnimation(0, time, BlendAnimUpdate);
-    }
-    else 
-    {
-        // fade to black
-        uint16_t time = random(600, 800);
-
-        animationState[0].StartingColor = strip.GetPixelColor(0);
-        animationState[0].EndingColor = RgbColor(0);
-
-        animations.StartAnimation(0, time, BlendAnimUpdate);
-    }
-
-    //animationState[1].StartingColor = strip.GetPixelColor(0);
-    //animationState[1].EndingColor = RgbColor(0);
-
-    animations.StartAnimation(1, 1000, BlendAnimUpdateU);
-
-    // toggle to the next effect state
-    fadeToColor = !fadeToColor;
-}
 
 // MQTT sub callback
 void callback(char* topic, unsigned char* payload, unsigned int length) {
@@ -207,11 +108,8 @@ void callback(char* topic, unsigned char* payload, unsigned int length) {
   Serial.print("Message arrived [");
   Serial.print(topic);
   Serial.print("] ");
-  
   Serial.println(payl);
   Serial.println();
-
-
 }
 
 
@@ -260,7 +158,6 @@ void setup()
   strip.Begin();
   strip.Show();
 
-  SetRandomSeed();
 
 }
 
@@ -268,8 +165,7 @@ void loop()
 {
 
   ArduinoOTA.handle();
-
-  
+ 
   if (!mqtt_client.connected()) {
     mqtt_reconnect();
     mqtt_client.subscribe((mqtt_base_topic+color_topic).c_str());
@@ -291,17 +187,18 @@ void loop()
       //Serial.println(" to "+(char)payl);
     }
   }
+  
+  
+  RgbColor whiteLeft(100,0,100);
+  RgbColor whiteRight(100,100,100);
+  RgbColor whiteTop(100,10,10);
+  strip.ClearTo(whiteLeft, 0, 47);
+  strip.ClearTo(whiteTop, 48, 95);
+  strip.ClearTo(whiteRight, 96, 143);
+  //strip.setPixelColor(5, 100, 20, 20);
+  strip.Show();
 
-    if (animations.IsAnimating())
-    {
-        // the normal loop just needs these two to run the active animations
-        animations.UpdateAnimations();
-        strip.Show();
-    }
-    else
-    {
-        // no animation runnning, start some 
-        //
-        FadeInFadeOutRinseRepeat(0.2f); // 0.0 = black, 0.25 is normal, 0.5 is bright
-    }
+
+// https://learn.adafruit.com/adafruit-neopixel-uberguide/arduino-library-use
+
 }
